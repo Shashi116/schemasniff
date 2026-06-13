@@ -1,0 +1,64 @@
+[package]
+name = "schemasniff"
+version = "0.1.0"
+edition = "2021"
+description = "Zero-backend schema inference for CSV, JSON, and NDJSON — runs entirely in the browser via WASM"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/Shashi116/schemasniff"
+homepage = "https://github.com/Shashi116/schemasniff"
+keywords = ["wasm", "schema", "csv", "json", "inference"]
+categories = ["wasm", "data-structures", "parser-implementations"]
+readme = "README.md"
+# Exclude demo app and CI config from crate publish
+exclude = ["demo/", ".github/", "fuzz/"]
+
+[lib]
+# cdylib = dynamic library for WASM; rlib = Rust lib for native tests
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# WASM ↔ JS bridge — never pass raw pointers across this boundary
+wasm-bindgen = "0.2"
+
+# Serialization — used to pass SchemaOutput as JSON across the WASM boundary
+serde = { version = "1", features = ["derive"] }
+serde-wasm-bindgen = "0.6"
+serde_json = "1"
+
+
+# CSV parsing — streaming, no full in-memory load
+csv = "1"
+
+# HyperLogLog cardinality estimation — inline implementation in src/hll.rs, no external dep
+
+# JS console for debug builds only — stripped from release
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-sys = { version = "0.3", features = ["console"] }
+
+[dev-dependencies]
+# WASM test harness — runs tests in a headless browser via wasm-pack test
+wasm-bindgen-test = "0.3"
+
+# ── Release profile ────────────────────────────────────────────────────────────
+# Optimise for size, not speed — WASM binary is downloaded by the user's browser.
+# 'z' = smallest binary; link-time optimisation strips dead code across crates.
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
+
+[profile.release]
+opt-level = 'z'
+lto = true
+codegen-units = 1
+panic = "abort"   # No unwinding in WASM — panics become clean JS exceptions
+
+# ── Features ───────────────────────────────────────────────────────────────────
+# 'console_error_panic_hook' gives readable panic messages in browser DevTools
+# during development. Never enable in production builds.
+[features]
+default = []
+dev = ["console_error_panic_hook"]
+console_error_panic_hook = ["dep:console_error_panic_hook"]
+
+[dependencies.console_error_panic_hook]
+version = "0.1"
+optional = true

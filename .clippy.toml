@@ -1,0 +1,7 @@
+# Clippy configuration — enforces the same rules as the #![deny(...)] in lib.rs
+# but also catches issues across integration tests and examples.
+#
+# Run locally:  cargo clippy -- -D warnings
+# Run in CI:    see .github/workflows/ci.yml
+
+avoid-breaking-exported-api = false

@@ -1,0 +1,43 @@
+{
+  "name": "schemasniff",
+  "version": "0.1.0",
+  "description": "Fast, secure, zero-backend schema inference for CSV and JSON — runs entirely in the browser via WASM",
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/shashik116/schemasniff"
+  },
+  "homepage": "https://github.com/shashik116/schemasniff#readme",
+  "bugs": {
+    "url": "https://github.com/shashik116/schemasniff/issues"
+  },
+  "keywords": [
+    "wasm", "schema", "csv", "json",
+    "inference", "data", "browser", "typescript"
+  ],
+  "files": [
+    "schemasniff_bg.wasm",
+    "schemasniff_bg.wasm.d.ts",
+    "schemasniff.js",
+    "schemasniff.d.ts",
+    "index.js",
+    "index.d.ts",
+    "types.js",
+    "types.d.ts"
+  ],
+  "main": "./index.js",
+  "module": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./index.js",
+      "types":  "./index.d.ts"
+    },
+    "./types": {
+      "import": "./types.js",
+      "types":  "./types.d.ts"
+    }
+  },
+  "sideEffects": false,
+  "engines": { "node": ">=18" }
+}

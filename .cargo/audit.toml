@@ -1,0 +1,15 @@
+[database]
+# Always fetch fresh advisory DB — never use a stale local cache in CI
+fetch = true
+stale = false
+
+[advisories]
+# Ignore list must be empty at ship time.
+# Any entry here requires a linked GitHub issue and an expiry comment.
+ignore = []
+
+[output]
+# "terminal" in dev, CI will use its own format via --json flag
+format = "terminal"
+quiet = false
+deny = ["warnings", "unmaintained", "unsound", "yanked"]

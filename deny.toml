@@ -1,0 +1,27 @@
+[licenses]
+# Explicitly allow every OSS license present in the dependency tree.
+# All entries are OSI-approved and FSF-free.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Unlicense",
+    "BSL-1.0",
+    "Unicode-3.0",
+]
+# Confidence threshold for license file heuristic matching
+confidence-threshold = 0.8
+
+[bans]
+# Forbid multiple versions of the same crate (helps catch dep duplication)
+multiple-versions = "warn"
+# No crates are banned outright yet
+deny = []
+
+[advisories]
+# Re-state the same zero-tolerance policy as audit.toml
+ignore = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

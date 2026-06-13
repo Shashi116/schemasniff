@@ -1,0 +1,160 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Daily at 07:00 UTC — catches new advisories without a push
+    - cron: "0 7 * * *"
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+
+  # ── Job 1: Rust tests + clippy ──────────────────────────────────────────────
+  test:
+    name: Test + Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo registry
+        uses: actions/cache@6849a6489940f00c2f30c0fb92c6274307ccb58a  # v4.1.2
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: cargo test
+        run: cargo test --all-features
+
+      - name: cargo clippy
+        run: cargo clippy -- -D warnings
+
+      - name: cargo fmt check
+        run: cargo fmt --check
+
+  # ── Job 2: Security audit ───────────────────────────────────────────────────
+  audit:
+    name: Security audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo-audit + cargo-deny binaries
+        id: cache-tools
+        uses: actions/cache@6849a6489940f00c2f30c0fb92c6274307ccb58a  # v4.1.2
+        with:
+          path: ~/.cargo/bin
+          key: ${{ runner.os }}-cargo-tools-audit-deny-v1
+
+      - name: Install cargo-audit
+        if: steps.cache-tools.outputs.cache-hit != 'true'
+        run: cargo install cargo-audit --locked
+
+      - name: Install cargo-deny
+        if: steps.cache-tools.outputs.cache-hit != 'true'
+        run: cargo install cargo-deny --locked
+
+      - name: cargo audit
+        run: cargo audit
+
+      - name: cargo deny check
+        run: cargo deny check
+
+  # ── Job 3: WASM build ───────────────────────────────────────────────────────
+  wasm:
+    name: WASM build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo registry
+        uses: actions/cache@6849a6489940f00c2f30c0fb92c6274307ccb58a  # v4.1.2
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-wasm-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-wasm-
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: wasm-pack build
+        run: wasm-pack build --target bundler --release
+
+      - name: Verify pkg/ contents
+        run: |
+          echo "=== pkg/ contents ==="
+          ls -lh pkg/
+          # Fail if .wasm is missing or suspiciously small (< 100 KB)
+          WASM_SIZE=$(stat -c%s pkg/schemasniff_bg.wasm)
+          echo "WASM size: $WASM_SIZE bytes"
+          if [ "$WASM_SIZE" -lt 102400 ]; then
+            echo "ERROR: .wasm is suspiciously small — build may have failed silently"
+            exit 1
+          fi
+
+      - name: Upload pkg/ as artifact
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882  # v4.3.4
+        with:
+          name: schemasniff-pkg
+          path: pkg/
+          retention-days: 7
+
+  # ── Job 4: Fuzz smoke test ──────────────────────────────────────────────────
+  fuzz:
+    name: Fuzz smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Install nightly toolchain
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Cache cargo-fuzz binary
+        id: cache-fuzz
+        uses: actions/cache@6849a6489940f00c2f30c0fb92c6274307ccb58a  # v4.1.2
+        with:
+          path: ~/.cargo/bin/cargo-fuzz
+          key: ${{ runner.os }}-cargo-fuzz-v1
+
+      - name: Install cargo-fuzz
+        if: steps.cache-fuzz.outputs.cache-hit != 'true'
+        run: cargo install cargo-fuzz --locked
+
+      - name: Fuzz CSV (30s)
+        run: cargo +nightly fuzz run fuzz_csv -- -max_total_time=30
+
+      - name: Fuzz JSON (30s)
+        run: cargo +nightly fuzz run fuzz_json -- -max_total_time=30
+
+      - name: Fuzz NUL + non-UTF-8 (30s)
+        run: cargo +nightly fuzz run fuzz_nul_nonutf8 -- -max_total_time=30
+
+      - name: Fuzz deep JSON (30s)
+        run: cargo +nightly fuzz run fuzz_deep_json -- -max_total_time=30

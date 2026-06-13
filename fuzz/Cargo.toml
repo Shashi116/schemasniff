@@ -1,0 +1,47 @@
+[package]
+name = "schemasniff-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+schemasniff = { path = ".." }
+
+# Match the parent's panic behaviour
+[profile.release]
+panic = "abort"
+opt-level = 3
+
+[[bin]]
+name = "fuzz_csv"
+path = "fuzz_targets/fuzz_csv.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_json"
+path = "fuzz_targets/fuzz_json.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_oversized"
+path = "fuzz_targets/fuzz_oversized.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_deep_json"
+path = "fuzz_targets/fuzz_deep_json.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_nul_nonutf8"
+path = "fuzz_targets/fuzz_nul_nonutf8.rs"
+test = false
+doc = false
