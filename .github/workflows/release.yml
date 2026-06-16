@@ -1,0 +1,142 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+
+  release:
+    name: Build + Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-release-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Build WASM
+        run: wasm-pack build --target bundler --release
+
+      - name: Build TypeScript wrapper
+        run: |
+          npm install
+          npm run build:ts
+          node scripts/postbuild.mjs
+
+      - name: Compute SRI hash
+        id: sri
+        run: |
+          HASH=$(openssl dgst -sha256 -binary pkg/schemasniff_bg.wasm | openssl base64 -A)
+          SRI="sha256-${HASH}"
+          echo "sri=${SRI}"             >> "$GITHUB_OUTPUT"
+          echo "hash=${HASH}"           >> "$GITHUB_OUTPUT"
+          WASM_SIZE=$(stat -c%s pkg/schemasniff_bg.wasm)
+          echo "wasm_size=${WASM_SIZE}" >> "$GITHUB_OUTPUT"
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Run tests before publishing
+        run: cargo test
+
+      - name: Create release notes file
+        run: |
+          cat > release-notes.md << 'EOF'
+          ## schemasniff v${{ steps.version.outputs.version }}
+
+          Fast, secure, zero-backend schema inference for CSV and JSON — runs entirely in the browser via WASM.
+
+          ### Install
+
+          ```bash
+          npm install schemasniff@${{ steps.version.outputs.version }}
+          ```
+
+          ### WASM Binary Integrity
+
+          Verify the `.wasm` binary using [Subresource Integrity](https://developer.mozilla.org/en-US/docs/Web/Security/Subresource_Integrity):
+
+          ```
+          SRI Hash:  ${{ steps.sri.outputs.sri }}
+          File:      schemasniff_bg.wasm
+          Size:      ${{ steps.sri.outputs.wasm_size }} bytes
+          Algorithm: SHA-256
+          ```
+
+          Use it in a `<script>` tag with integrity checking:
+
+          ```html
+          <script
+            src="https://cdn.jsdelivr.net/npm/schemasniff@${{ steps.version.outputs.version }}/schemasniff.js"
+            integrity="${{ steps.sri.outputs.sri }}"
+            crossorigin="anonymous">
+          </script>
+          ```
+
+          Or verify manually after installing:
+
+          ```bash
+          openssl dgst -sha256 -binary node_modules/schemasniff/schemasniff_bg.wasm \
+            | openssl base64 -A
+          # Expected: ${{ steps.sri.outputs.hash }}
+          ```
+
+          ### What's in this release
+
+          - Zero external runtime dependencies in the browser
+          - Automatic chunking for files over 10 MB
+          - Supports CSV, JSON (object-array), and NDJSON
+          - Hard caps: 1M rows, 1024 columns, 64 KB per cell, 32 JSON nesting levels
+          - All errors are position-only — no raw cell content ever returned
+          EOF
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release-notes.md
+          files: |
+            pkg/schemasniff_bg.wasm
+            pkg/schemasniff.js
+            pkg/schemasniff.d.ts
+            pkg/index.js
+            pkg/index.d.ts
+            pkg/types.js
+            pkg/types.d.ts
+          fail_on_unmatched_files: true
+
+      - name: Publish to npm
+        run: cd pkg && npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
