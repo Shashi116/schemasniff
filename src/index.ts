@@ -18,11 +18,11 @@ export type {
 } from "./types";
 export { isSchemaError, isSchemaResult } from "./types";
 
-// ── Private constants ─────────────────────────────────────────────────────────
-const CHUNK_THRESHOLD = 10 * 1024 * 1024; // files over this are split into chunks
-const CHUNK_SIZE      =  4 * 1024 * 1024; // max bytes per chunk
+// Private constants
+const CHUNK_THRESHOLD = 10 * 1024 * 1024;
+const CHUNK_SIZE      =  4 * 1024 * 1024;
 
-// ── Lazy WASM initialisation ──────────────────────────────────────────────────
+// Lazy WASM init
 
 type WasmModule = { infer_schema: (input: string) => unknown };
 let wasmModule: WasmModule | null = null;
@@ -33,17 +33,17 @@ function ensureWasm(): Promise<void> {
     wasmReady = import("../pkg/schemasniff.js").then((m: WasmModule) => {
       wasmModule = m;
     }).catch((err) => {
-      wasmReady = null; // allow retry on next call
+      wasmReady = null; // retry on next call
       throw err;
     });
   }
   return wasmReady;
 }
 
-// ── Call-once lock ────────────────────────────────────────────────────────────
+// Call-once lock
 let isRunning = false;
 
-// ── Raw WASM call ─────────────────────────────────────────────────────────────
+// Raw WASM call
 
 function callWasm(input: string): InferSchemaReturn {
   try {
@@ -57,12 +57,10 @@ function callWasm(input: string): InferSchemaReturn {
   }
 }
 
-// ── Chunk splitter ────────────────────────────────────────────────────────────
-// O(n) — each line is encoded exactly once. Byte length is tracked as a running
-// counter; the chunk string is only built (parts.join) when flushing a full chunk.
+// Chunk splitter — O(n), header prepended to every chunk.
 
 function splitIntoChunks(input: string): string[] {
-  // .length ≈ byte count for ASCII — avoids encoding the whole string unless near boundary
+  // Use .length as fast byte estimate; TextEncoder only if near the threshold.
   const fastLen = input.length;
   const byteLen = fastLen > CHUNK_THRESHOLD * 0.8
     ? new TextEncoder().encode(input).length
@@ -80,7 +78,7 @@ function splitIntoChunks(input: string): string[] {
 
   for (let i = 1; i < lines.length; i++) {
     const line      = lines[i] ?? "";
-    const lineBytes = encoder.encode(line).length + 1; // +1 for "\n"
+    const lineBytes = encoder.encode(line).length + 1; // +1 for \n
 
     if (currentBytes + lineBytes > CHUNK_SIZE && parts.length > 1) {
       chunks.push(parts.join("\n"));
@@ -97,12 +95,7 @@ function splitIntoChunks(input: string): string[] {
   return chunks.length > 0 ? chunks : [input];
 }
 
-// ── Result merger ─────────────────────────────────────────────────────────────
-// Combines N per-chunk SchemaResults into one. For each column:
-//   - null_count and cardinality_estimate are summed
-//   - numeric_min/max are taken as global min/max across chunks
-//   - inferred_type: first non-unknown type wins
-//   - null_ratio is recomputed from merged totals
+// Result merger — combines N per-chunk SchemaResults into one.
 
 function mergeResults(results: SchemaResult[], chunkCount: number): SchemaResult {
   const base = results[0]!;
@@ -169,9 +162,7 @@ function mergeResults(results: SchemaResult[], chunkCount: number): SchemaResult
   };
 }
 
-// ── Chunked path ──────────────────────────────────────────────────────────────
-// setTimeout(0) between chunks yields to the event loop so the browser can
-// repaint the progress bar before the next synchronous WASM call.
+// Chunked path — setTimeout(0) yields to the event loop between WASM calls.
 
 async function runChunked(
   chunks: string[],
@@ -192,7 +183,7 @@ async function runChunked(
   return mergeResults(results, chunks.length);
 }
 
-// ── Public API ────────────────────────────────────────────────────────────────
+// Public API
 
 export async function inferSchema(
   input: unknown,

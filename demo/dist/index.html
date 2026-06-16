@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>schemasniff demo</title>
+    <script type="module" crossorigin src="/assets/index-DhZXkRWv.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-Cp794YbP.css">
+  </head>
+  <body>
+    <h1>schemasniff demo</h1>
+
+    <div id="drop-zone">
+      Drop a <strong>.csv</strong>, <strong>.json</strong>, or <strong>.ndjson</strong> file here
+      <br />
+      <label for="file-input">or browse</label>
+      <input type="file" id="file-input" accept=".csv,.json,.ndjson" />
+    </div>
+
+    <div id="loading">
+      <div id="progress-label">⏳ Analysing schema…</div>
+      <div id="progress-track">
+        <div id="progress-bar"></div>
+      </div>
+    </div>
+
+    <div id="truncation-banner">
+      ⚠️ Showing schema for first 1,000,000 rows — file was truncated
+    </div>
+
+    <div id="error"></div>
+    <div id="output"></div>
+
+  </body>
+</html>
