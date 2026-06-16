@@ -125,7 +125,7 @@ fn is_integer(s: &str) -> bool {
 /// Floats must contain `.` or `e`/`E` and parse as finite f64.
 fn is_float(s: &str) -> bool {
     if !s.contains('.') && !s.contains('e') && !s.contains('E') { return false; }
-    s.parse::<f64>().map_or(false, |v| v.is_finite())
+    s.parse::<f64>().is_ok_and(|v| v.is_finite())
 }
 
 /// Case-insensitive: true, false, yes, no.
