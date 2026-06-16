@@ -1,7 +1,9 @@
 //! CSV parser — streams input into per-column accumulators, never storing raw values.
 
+use crate::{
+    ColumnMeta, InferredType, SchemaError, SchemaOutput, MAX_CELL_BYTES, MAX_COLS, MAX_ROWS,
+};
 use csv::ReaderBuilder;
-use crate::{ColumnMeta, InferredType, SchemaError, SchemaOutput, MAX_CELL_BYTES, MAX_COLS, MAX_ROWS};
 
 struct ColumnAccumulator {
     name: String,
@@ -16,16 +18,17 @@ struct ColumnAccumulator {
 #[derive(Default)]
 struct TypeVotes {
     integer: u64,
-    float:   u64,
+    float: u64,
     boolean: u64,
-    date:    u64,
-    string:  u64,
+    date: u64,
+    string: u64,
 }
 
 impl ColumnAccumulator {
     fn new(name: String, index: usize) -> Result<Self, SchemaError> {
         Ok(Self {
-            name, index,
+            name,
+            index,
             votes: TypeVotes::default(),
             null_count: 0,
             numeric_min: None,
@@ -62,8 +65,8 @@ impl ColumnAccumulator {
                 }
             }
             InferredType::Boolean => self.votes.boolean += 1,
-            InferredType::Date    => self.votes.date    += 1,
-            InferredType::String  => self.votes.string  += 1,
+            InferredType::Date => self.votes.date += 1,
+            InferredType::String => self.votes.string += 1,
             InferredType::Unknown => {}
         }
 
@@ -72,15 +75,24 @@ impl ColumnAccumulator {
 
     fn finish(self, total_rows: u64) -> ColumnMeta {
         let inferred_type = self.votes.dominant();
-        let null_ratio = if total_rows == 0 { 0.0 } else { self.null_count as f64 / total_rows as f64 };
+        let null_ratio = if total_rows == 0 {
+            0.0
+        } else {
+            self.null_count as f64 / total_rows as f64
+        };
         let (numeric_min, numeric_max) = match inferred_type {
             InferredType::Integer | InferredType::Float => (self.numeric_min, self.numeric_max),
             _ => (None, None),
         };
         ColumnMeta {
-            name: self.name, index: self.index, inferred_type,
-            nullable: self.null_count > 0, null_count: self.null_count, null_ratio,
-            numeric_min, numeric_max,
+            name: self.name,
+            index: self.index,
+            inferred_type,
+            nullable: self.null_count > 0,
+            null_count: self.null_count,
+            null_ratio,
+            numeric_min,
+            numeric_max,
             cardinality_estimate: self.hll.count().round() as u64,
         }
     }
@@ -90,85 +102,172 @@ impl TypeVotes {
     /// Majority vote with priority: Integer > Float > Boolean > Date > String.
     fn dominant(&self) -> InferredType {
         let total = self.integer + self.float + self.boolean + self.date + self.string;
-        if total == 0 { return InferredType::Unknown; }
-        let max = self.integer.max(self.float).max(self.boolean).max(self.date).max(self.string);
-        if      self.integer == max { InferredType::Integer }
-        else if self.float   == max { InferredType::Float }
-        else if self.boolean == max { InferredType::Boolean }
-        else if self.date    == max { InferredType::Date }
-        else                        { InferredType::String }
+        if total == 0 {
+            return InferredType::Unknown;
+        }
+        let max = self
+            .integer
+            .max(self.float)
+            .max(self.boolean)
+            .max(self.date)
+            .max(self.string);
+        if self.integer == max {
+            InferredType::Integer
+        } else if self.float == max {
+            InferredType::Float
+        } else if self.boolean == max {
+            InferredType::Boolean
+        } else if self.date == max {
+            InferredType::Date
+        } else {
+            InferredType::String
+        }
     }
 }
 
 /// Infer the type of a single non-empty cell. No regex, no allocation.
 pub(crate) fn infer_cell_type(raw: &str) -> InferredType {
     let s = raw.trim();
-    if s.is_empty()    { return InferredType::Unknown; }
-    if is_integer(s)   { return InferredType::Integer; }
-    if is_float(s)     { return InferredType::Float; }
-    if is_boolean(s)   { return InferredType::Boolean; }
-    if is_date_like(s) { return InferredType::Date; }
+    if s.is_empty() {
+        return InferredType::Unknown;
+    }
+    if is_integer(s) {
+        return InferredType::Integer;
+    }
+    if is_float(s) {
+        return InferredType::Float;
+    }
+    if is_boolean(s) {
+        return InferredType::Boolean;
+    }
+    if is_date_like(s) {
+        return InferredType::Date;
+    }
     InferredType::String
 }
 
 /// Integers only — rejects leading zeros (IDs, zip codes, etc.).
 fn is_integer(s: &str) -> bool {
     let digits = s.strip_prefix('-').unwrap_or(s);
-    if digits.is_empty() { return false; }
+    if digits.is_empty() {
+        return false;
+    }
     let mut chars = digits.chars();
-    let first = match chars.next() { Some(c) => c, None => return false };
-    if first == '0' && chars.next().is_some() { return false; }
-    if !first.is_ascii_digit() { return false; }
+    let first = match chars.next() {
+        Some(c) => c,
+        None => return false,
+    };
+    if first == '0' && chars.next().is_some() {
+        return false;
+    }
+    if !first.is_ascii_digit() {
+        return false;
+    }
     digits.chars().all(|c| c.is_ascii_digit()) && s.parse::<i64>().is_ok()
 }
 
 /// Floats must contain `.` or `e`/`E` and parse as finite f64.
 fn is_float(s: &str) -> bool {
-    if !s.contains('.') && !s.contains('e') && !s.contains('E') { return false; }
+    if !s.contains('.') && !s.contains('e') && !s.contains('E') {
+        return false;
+    }
     s.parse::<f64>().is_ok_and(|v| v.is_finite())
 }
 
 /// Case-insensitive: true, false, yes, no.
 fn is_boolean(s: &str) -> bool {
-    matches!(s.to_ascii_lowercase().as_str(), "true" | "false" | "yes" | "no")
+    matches!(
+        s.to_ascii_lowercase().as_str(),
+        "true" | "false" | "yes" | "no"
+    )
 }
 
 /// ISO-8601: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS. Structural check only.
 fn is_date_like(s: &str) -> bool {
-    if s.len() < 10 { return false; }
+    if s.len() < 10 {
+        return false;
+    }
     let b = s.as_bytes();
-    let date = match b.get(..10) { Some(d) => d, None => return false };
+    let date = match b.get(..10) {
+        Some(d) => d,
+        None => return false,
+    };
 
-    if !date.get(..4).is_some_and(|v| v.iter().all(|c| c.is_ascii_digit())) { return false; }
-    if date.get(4) != Some(&b'-') { return false; }
-    if !date.get(5..7).is_some_and(|v| v.iter().all(|c| c.is_ascii_digit())) { return false; }
-    if date.get(7) != Some(&b'-') { return false; }
-    if !date.get(8..10).is_some_and(|v| v.iter().all(|c| c.is_ascii_digit())) { return false; }
+    if !date
+        .get(..4)
+        .is_some_and(|v| v.iter().all(|c| c.is_ascii_digit()))
+    {
+        return false;
+    }
+    if date.get(4) != Some(&b'-') {
+        return false;
+    }
+    if !date
+        .get(5..7)
+        .is_some_and(|v| v.iter().all(|c| c.is_ascii_digit()))
+    {
+        return false;
+    }
+    if date.get(7) != Some(&b'-') {
+        return false;
+    }
+    if !date
+        .get(8..10)
+        .is_some_and(|v| v.iter().all(|c| c.is_ascii_digit()))
+    {
+        return false;
+    }
 
     if s.len() > 10 {
-        if s.len() < 19 { return false; }
+        if s.len() < 19 {
+            return false;
+        }
         let sep = b.get(10);
-        if sep != Some(&b'T') && sep != Some(&b' ') { return false; }
-        if !b.get(11..13).is_some_and(|v| v.iter().all(|c| c.is_ascii_digit())) { return false; }
-        if b.get(13) != Some(&b':') { return false; }
-        if !b.get(14..16).is_some_and(|v| v.iter().all(|c| c.is_ascii_digit())) { return false; }
-        if b.get(16) != Some(&b':') { return false; }
-        if !b.get(17..19).is_some_and(|v| v.iter().all(|c| c.is_ascii_digit())) { return false; }
+        if sep != Some(&b'T') && sep != Some(&b' ') {
+            return false;
+        }
+        if !b
+            .get(11..13)
+            .is_some_and(|v| v.iter().all(|c| c.is_ascii_digit()))
+        {
+            return false;
+        }
+        if b.get(13) != Some(&b':') {
+            return false;
+        }
+        if !b
+            .get(14..16)
+            .is_some_and(|v| v.iter().all(|c| c.is_ascii_digit()))
+        {
+            return false;
+        }
+        if b.get(16) != Some(&b':') {
+            return false;
+        }
+        if !b
+            .get(17..19)
+            .is_some_and(|v| v.iter().all(|c| c.is_ascii_digit()))
+        {
+            return false;
+        }
     }
     true
 }
 
 /// Parse a CSV string into a `SchemaOutput`.
 pub fn parse_csv(input: &str) -> Result<SchemaOutput, SchemaError> {
-    if input.trim().is_empty() { return Err(SchemaError::EmptyInput); }
+    if input.trim().is_empty() {
+        return Err(SchemaError::EmptyInput);
+    }
 
     // The csv crate drops blank lines — patch them to empty quoted fields.
     let patched: std::borrow::Cow<str> = if input.contains("\n\n") || input.contains("\r\n\r\n") {
         std::borrow::Cow::Owned(
-            input.lines()
+            input
+                .lines()
                 .map(|l| if l.trim().is_empty() { "\"\"" } else { l })
                 .collect::<Vec<_>>()
-                .join("\n")
+                .join("\n"),
         )
     } else {
         std::borrow::Cow::Borrowed(input)
@@ -179,21 +278,29 @@ pub fn parse_csv(input: &str) -> Result<SchemaOutput, SchemaError> {
         .trim(csv::Trim::All)
         .from_reader(patched.as_bytes());
 
-    let headers = reader.headers()
+    let headers = reader
+        .headers()
         .map_err(|e| SchemaError::CsvParseFailed {
             row: e.position().map_or(0, |p| p.line() as usize),
             column: None,
         })?
         .clone();
 
-    if headers.is_empty() { return Err(SchemaError::EmptyInput); }
+    if headers.is_empty() {
+        return Err(SchemaError::EmptyInput);
+    }
 
     let col_count = headers.len();
     if col_count > MAX_COLS {
-        return Err(SchemaError::TooManyColumns { limit: MAX_COLS, actual: col_count });
+        return Err(SchemaError::TooManyColumns {
+            limit: MAX_COLS,
+            actual: col_count,
+        });
     }
 
-    let mut accumulators: Vec<ColumnAccumulator> = headers.iter().enumerate()
+    let mut accumulators: Vec<ColumnAccumulator> = headers
+        .iter()
+        .enumerate()
         .map(|(i, name)| ColumnAccumulator::new(name.chars().take(256).collect(), i))
         .collect::<Result<Vec<_>, _>>()?;
 
@@ -201,10 +308,15 @@ pub fn parse_csv(input: &str) -> Result<SchemaOutput, SchemaError> {
     let mut truncated = false;
 
     for result in reader.records() {
-        if row_count as usize >= MAX_ROWS { truncated = true; break; }
+        if row_count as usize >= MAX_ROWS {
+            truncated = true;
+            break;
+        }
 
         let record = result.map_err(|e| SchemaError::CsvParseFailed {
-            row: e.position().map_or(row_count as usize, |p| p.line() as usize),
+            row: e
+                .position()
+                .map_or(row_count as usize, |p| p.line() as usize),
             column: None,
         })?;
 
@@ -212,28 +324,42 @@ pub fn parse_csv(input: &str) -> Result<SchemaOutput, SchemaError> {
 
         for col_idx in 0..effective_cols {
             let cell = record.get(col_idx).unwrap_or("");
-            let acc = accumulators.get_mut(col_idx)
-                .ok_or(SchemaError::CsvParseFailed { row: row_count as usize, column: Some(col_idx) })?;
+            let acc = accumulators
+                .get_mut(col_idx)
+                .ok_or(SchemaError::CsvParseFailed {
+                    row: row_count as usize,
+                    column: Some(col_idx),
+                })?;
             acc.observe(cell, row_count as usize, col_idx)?;
         }
 
         for col_idx in effective_cols..col_count {
-            let acc = accumulators.get_mut(col_idx)
-                .ok_or(SchemaError::CsvParseFailed { row: row_count as usize, column: Some(col_idx) })?;
+            let acc = accumulators
+                .get_mut(col_idx)
+                .ok_or(SchemaError::CsvParseFailed {
+                    row: row_count as usize,
+                    column: Some(col_idx),
+                })?;
             acc.null_count += 1;
         }
 
         row_count += 1;
     }
 
-    if row_count == 0 { return Err(SchemaError::EmptyInput); }
+    if row_count == 0 {
+        return Err(SchemaError::EmptyInput);
+    }
 
     Ok(SchemaOutput {
-        row_count, truncated,
+        row_count,
+        truncated,
         detected_format: "csv".to_string(),
         schemasniff_version: env!("CARGO_PKG_VERSION").to_string(),
         chunk_count: 1,
-        columns: accumulators.into_iter().map(|acc| acc.finish(row_count)).collect(),
+        columns: accumulators
+            .into_iter()
+            .map(|acc| acc.finish(row_count))
+            .collect(),
     })
 }
 
@@ -243,53 +369,56 @@ mod tests {
 
     #[test]
     fn cell_integers() {
-        assert_eq!(infer_cell_type("0"),   InferredType::Integer);
-        assert_eq!(infer_cell_type("42"),  InferredType::Integer);
+        assert_eq!(infer_cell_type("0"), InferredType::Integer);
+        assert_eq!(infer_cell_type("42"), InferredType::Integer);
         assert_eq!(infer_cell_type("-17"), InferredType::Integer);
-        assert_eq!(infer_cell_type("9223372036854775807"), InferredType::Integer);
+        assert_eq!(
+            infer_cell_type("9223372036854775807"),
+            InferredType::Integer
+        );
     }
 
     #[test]
     fn cell_leading_zero_is_string() {
-        assert_eq!(infer_cell_type("007"),  InferredType::String);
+        assert_eq!(infer_cell_type("007"), InferredType::String);
         assert_eq!(infer_cell_type("0042"), InferredType::String);
     }
 
     #[test]
     fn cell_floats() {
-        assert_eq!(infer_cell_type("3.14"),   InferredType::Float);
-        assert_eq!(infer_cell_type("-0.5"),   InferredType::Float);
-        assert_eq!(infer_cell_type("1e10"),   InferredType::Float);
+        assert_eq!(infer_cell_type("3.14"), InferredType::Float);
+        assert_eq!(infer_cell_type("-0.5"), InferredType::Float);
+        assert_eq!(infer_cell_type("1e10"), InferredType::Float);
         assert_eq!(infer_cell_type("1.5E-3"), InferredType::Float);
     }
 
     #[test]
     fn cell_nan_inf_are_string() {
-        assert_eq!(infer_cell_type("NaN"),      InferredType::String);
+        assert_eq!(infer_cell_type("NaN"), InferredType::String);
         assert_eq!(infer_cell_type("Infinity"), InferredType::String);
-        assert_eq!(infer_cell_type("-Inf"),     InferredType::String);
+        assert_eq!(infer_cell_type("-Inf"), InferredType::String);
     }
 
     #[test]
     fn cell_booleans() {
-        assert_eq!(infer_cell_type("true"),  InferredType::Boolean);
+        assert_eq!(infer_cell_type("true"), InferredType::Boolean);
         assert_eq!(infer_cell_type("FALSE"), InferredType::Boolean);
-        assert_eq!(infer_cell_type("yes"),   InferredType::Boolean);
-        assert_eq!(infer_cell_type("No"),    InferredType::Boolean);
+        assert_eq!(infer_cell_type("yes"), InferredType::Boolean);
+        assert_eq!(infer_cell_type("No"), InferredType::Boolean);
     }
 
     #[test]
     fn cell_dates() {
-        assert_eq!(infer_cell_type("2024-01-15"),          InferredType::Date);
+        assert_eq!(infer_cell_type("2024-01-15"), InferredType::Date);
         assert_eq!(infer_cell_type("2024-01-15T09:30:00"), InferredType::Date);
         assert_eq!(infer_cell_type("2024-01-15 09:30:00"), InferredType::Date);
-        assert_eq!(infer_cell_type("2024-1-1"),            InferredType::String);
-        assert_eq!(infer_cell_type("15-01-2024"),          InferredType::String);
+        assert_eq!(infer_cell_type("2024-1-1"), InferredType::String);
+        assert_eq!(infer_cell_type("15-01-2024"), InferredType::String);
     }
 
     #[test]
     fn cell_empty_is_unknown() {
-        assert_eq!(infer_cell_type(""),    InferredType::Unknown);
+        assert_eq!(infer_cell_type(""), InferredType::Unknown);
         assert_eq!(infer_cell_type("   "), InferredType::Unknown);
     }
 
@@ -322,18 +451,27 @@ mod tests {
     #[test]
     fn column_name_truncated_to_256_chars() {
         let csv = format!("{},age\nAlice,30", "a".repeat(300));
-        assert_eq!(parse_csv(&csv).expect("parse").columns[0].name.chars().count(), 256);
+        assert_eq!(
+            parse_csv(&csv).expect("parse").columns[0]
+                .name
+                .chars()
+                .count(),
+            256
+        );
     }
 
     #[test]
     fn empty_input_error() {
-        assert!(matches!(parse_csv(""),    Err(SchemaError::EmptyInput)));
+        assert!(matches!(parse_csv(""), Err(SchemaError::EmptyInput)));
         assert!(matches!(parse_csv("   "), Err(SchemaError::EmptyInput)));
     }
 
     #[test]
     fn header_only_is_empty_input() {
-        assert!(matches!(parse_csv("name,age\n"), Err(SchemaError::EmptyInput)));
+        assert!(matches!(
+            parse_csv("name,age\n"),
+            Err(SchemaError::EmptyInput)
+        ));
     }
 
     #[test]
@@ -376,7 +514,9 @@ mod tests {
     #[test]
     fn truncation_flag_set_at_max_rows() {
         let mut csv = String::from("n\n");
-        for i in 0..(MAX_ROWS + 2) { csv.push_str(&format!("{i}\n")); }
+        for i in 0..(MAX_ROWS + 2) {
+            csv.push_str(&format!("{i}\n"));
+        }
         let out = parse_csv(&csv).expect("parse");
         assert!(out.truncated);
         assert_eq!(out.row_count as usize, MAX_ROWS);

@@ -7,7 +7,7 @@
 //!   4. Purity guarantee                      ← PurityGuarantee::assert
 //!   5. Output sanitization                   ← sanitize_output
 
-use crate::{SchemaError, SchemaOutput, ColumnMeta, InferredType};
+use crate::{ColumnMeta, InferredType, SchemaError, SchemaOutput};
 
 /// 10 MB hard cap enforced on the Rust side.
 pub const RUST_BYTE_CAP: usize = 10 * 1024 * 1024;
@@ -24,7 +24,9 @@ pub fn validate_input(input: &str) -> Result<(), SchemaError> {
         return Err(SchemaError::EmptyInput);
     }
     if let Some(pos) = input.bytes().position(|b| b == 0x00) {
-        return Err(SchemaError::EncodingError { byte_offset: Some(pos) });
+        return Err(SchemaError::EncodingError {
+            byte_offset: Some(pos),
+        });
     }
     Ok(())
 }
@@ -42,19 +44,39 @@ pub fn sanitize_output(output: SchemaOutput) -> Result<SchemaOutput, SchemaError
 }
 
 fn sanitize_column(col: &ColumnMeta, row_count: u64) -> Result<(), SchemaError> {
-    let err = || SchemaError::CsvParseFailed { row: 0, column: Some(col.index) };
+    let err = || SchemaError::CsvParseFailed {
+        row: 0,
+        column: Some(col.index),
+    };
 
-    if col.name.chars().count() > 256 { return Err(err()); }
-    if !(0.0..=1.0).contains(&col.null_ratio) || !col.null_ratio.is_finite() { return Err(err()); }
-    if col.null_count > row_count { return Err(err()); }
+    if col.name.chars().count() > 256 {
+        return Err(err());
+    }
+    if !(0.0..=1.0).contains(&col.null_ratio) || !col.null_ratio.is_finite() {
+        return Err(err());
+    }
+    if col.null_count > row_count {
+        return Err(err());
+    }
 
-    let is_numeric = matches!(col.inferred_type, InferredType::Integer | InferredType::Float);
-    if !is_numeric && (col.numeric_min.is_some() || col.numeric_max.is_some()) { return Err(err()); }
+    let is_numeric = matches!(
+        col.inferred_type,
+        InferredType::Integer | InferredType::Float
+    );
+    if !is_numeric && (col.numeric_min.is_some() || col.numeric_max.is_some()) {
+        return Err(err());
+    }
 
-    if col.numeric_min.is_some_and(|v| !v.is_finite()) { return Err(err()); }
-    if col.numeric_max.is_some_and(|v| !v.is_finite()) { return Err(err()); }
+    if col.numeric_min.is_some_and(|v| !v.is_finite()) {
+        return Err(err());
+    }
+    if col.numeric_max.is_some_and(|v| !v.is_finite()) {
+        return Err(err());
+    }
     if let (Some(min), Some(max)) = (col.numeric_min, col.numeric_max) {
-        if min > max { return Err(err()); }
+        if min > max {
+            return Err(err());
+        }
     }
 
     Ok(())
@@ -80,19 +102,30 @@ mod tests {
 
     #[test]
     fn whitespace_only_rejected() {
-        assert!(matches!(validate_input("   \n\t  "), Err(SchemaError::EmptyInput)));
+        assert!(matches!(
+            validate_input("   \n\t  "),
+            Err(SchemaError::EmptyInput)
+        ));
     }
 
     #[test]
     fn oversized_input_rejected() {
         let big = "a".repeat(RUST_BYTE_CAP + 1);
-        assert!(matches!(validate_input(&big), Err(SchemaError::InputTooLarge { .. })));
+        assert!(matches!(
+            validate_input(&big),
+            Err(SchemaError::InputTooLarge { .. })
+        ));
     }
 
     #[test]
     fn nul_byte_rejected() {
         let err = validate_input("name,age\nAlice\x0030").expect_err("NUL must be rejected");
-        assert!(matches!(err, SchemaError::EncodingError { byte_offset: Some(_) }));
+        assert!(matches!(
+            err,
+            SchemaError::EncodingError {
+                byte_offset: Some(_)
+            }
+        ));
     }
 
     #[test]
@@ -108,18 +141,26 @@ mod tests {
 
     fn make_output(cols: Vec<ColumnMeta>) -> SchemaOutput {
         SchemaOutput {
-            row_count: 10, truncated: false,
+            row_count: 10,
+            truncated: false,
             detected_format: "csv".to_string(),
             schemasniff_version: "0.1.0".to_string(),
-            chunk_count: 1, columns: cols,
+            chunk_count: 1,
+            columns: cols,
         }
     }
 
     fn make_col(name: &str, t: InferredType) -> ColumnMeta {
         ColumnMeta {
-            name: name.to_string(), index: 0, inferred_type: t,
-            nullable: false, null_count: 0, null_ratio: 0.0,
-            numeric_min: None, numeric_max: None, cardinality_estimate: 0,
+            name: name.to_string(),
+            index: 0,
+            inferred_type: t,
+            nullable: false,
+            null_count: 0,
+            null_ratio: 0.0,
+            numeric_min: None,
+            numeric_max: None,
+            cardinality_estimate: 0,
         }
     }
 

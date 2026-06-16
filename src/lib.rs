@@ -4,16 +4,16 @@
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing,
+    clippy::indexing_slicing
 )]
 
-pub(crate) mod hll;
 pub mod csv_parser;
+pub(crate) mod hll;
 pub mod json_parser;
 pub mod security;
 
-use wasm_bindgen::prelude::*;
 use serde::{Deserialize, Serialize};
+use wasm_bindgen::prelude::*;
 
 #[allow(dead_code)]
 /// Internal arithmetic helper used in tests.
@@ -22,9 +22,9 @@ pub fn add(left: u64, right: u64) -> u64 {
 }
 
 /// Max rows processed; beyond this input is truncated.
-pub const MAX_ROWS: usize       = 1_000_000;
+pub const MAX_ROWS: usize = 1_000_000;
 /// Max columns; exceeding returns `TooManyColumns`.
-pub const MAX_COLS: usize       = 1_024;
+pub const MAX_COLS: usize = 1_024;
 /// Max cell bytes; larger cells are treated as null.
 pub const MAX_CELL_BYTES: usize = 65_536;
 /// Max JSON nesting depth; deeper input returns `NestingTooDeep`.
@@ -93,17 +93,23 @@ pub struct SchemaOutput {
 #[serde(tag = "error", rename_all = "snake_case")]
 pub enum SchemaError {
     /// Input exceeded the 10 MB byte cap.
-    InputTooLarge   { limit_bytes: usize, actual_bytes: usize },
+    InputTooLarge {
+        limit_bytes: usize,
+        actual_bytes: usize,
+    },
     /// Column count exceeded MAX_COLS.
-    TooManyColumns  { limit: usize, actual: usize },
+    TooManyColumns { limit: usize, actual: usize },
     /// Row count exceeded MAX_ROWS.
     RowLimitReached { limit: usize },
     /// JSON nesting exceeded MAX_JSON_DEPTH.
-    NestingTooDeep  { limit: usize, detected_at_row: usize },
+    NestingTooDeep {
+        limit: usize,
+        detected_at_row: usize,
+    },
     /// Invalid encoding or NUL byte.
-    EncodingError   { byte_offset: Option<usize> },
+    EncodingError { byte_offset: Option<usize> },
     /// CSV parse failure (position only).
-    CsvParseFailed  { row: usize, column: Option<usize> },
+    CsvParseFailed { row: usize, column: Option<usize> },
     /// JSON parse failure (position only).
     JsonParseFailed { byte_offset: Option<usize> },
     /// Input was empty or whitespace-only.
@@ -135,30 +141,49 @@ impl SchemaError {
 impl std::fmt::Display for SchemaError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SchemaError::InputTooLarge { limit_bytes, actual_bytes } =>
-                write!(f, "input too large: {actual_bytes} bytes exceeds {limit_bytes} byte limit"),
-            SchemaError::TooManyColumns { limit, actual } =>
-                write!(f, "too many columns: {actual} exceeds limit of {limit}"),
-            SchemaError::RowLimitReached { limit } =>
-                write!(f, "row limit reached: processing stopped at {limit} rows"),
-            SchemaError::NestingTooDeep { limit, detected_at_row } =>
-                write!(f, "nesting too deep at row {detected_at_row}: limit is {limit} levels"),
-            SchemaError::EncodingError { byte_offset: Some(pos) } =>
-                write!(f, "encoding error at byte {pos}"),
-            SchemaError::EncodingError { byte_offset: None } =>
-                write!(f, "encoding error at unknown position"),
-            SchemaError::CsvParseFailed { row, column: Some(col) } =>
-                write!(f, "CSV parse failed at row {row}, column {col}"),
-            SchemaError::CsvParseFailed { row, column: None } =>
-                write!(f, "CSV parse failed at row {row}"),
-            SchemaError::JsonParseFailed { byte_offset: Some(pos) } =>
-                write!(f, "JSON parse failed at byte {pos}"),
-            SchemaError::JsonParseFailed { byte_offset: None } =>
-                write!(f, "JSON parse failed at unknown position"),
-            SchemaError::EmptyInput =>
-                write!(f, "input contained no data rows"),
-            SchemaError::UnrecognizedFormat =>
-                write!(f, "format not recognised as CSV, JSON, or NDJSON"),
+            SchemaError::InputTooLarge {
+                limit_bytes,
+                actual_bytes,
+            } => write!(
+                f,
+                "input too large: {actual_bytes} bytes exceeds {limit_bytes} byte limit"
+            ),
+            SchemaError::TooManyColumns { limit, actual } => {
+                write!(f, "too many columns: {actual} exceeds limit of {limit}")
+            }
+            SchemaError::RowLimitReached { limit } => {
+                write!(f, "row limit reached: processing stopped at {limit} rows")
+            }
+            SchemaError::NestingTooDeep {
+                limit,
+                detected_at_row,
+            } => write!(
+                f,
+                "nesting too deep at row {detected_at_row}: limit is {limit} levels"
+            ),
+            SchemaError::EncodingError {
+                byte_offset: Some(pos),
+            } => write!(f, "encoding error at byte {pos}"),
+            SchemaError::EncodingError { byte_offset: None } => {
+                write!(f, "encoding error at unknown position")
+            }
+            SchemaError::CsvParseFailed {
+                row,
+                column: Some(col),
+            } => write!(f, "CSV parse failed at row {row}, column {col}"),
+            SchemaError::CsvParseFailed { row, column: None } => {
+                write!(f, "CSV parse failed at row {row}")
+            }
+            SchemaError::JsonParseFailed {
+                byte_offset: Some(pos),
+            } => write!(f, "JSON parse failed at byte {pos}"),
+            SchemaError::JsonParseFailed { byte_offset: None } => {
+                write!(f, "JSON parse failed at unknown position")
+            }
+            SchemaError::EmptyInput => write!(f, "input contained no data rows"),
+            SchemaError::UnrecognizedFormat => {
+                write!(f, "format not recognised as CSV, JSON, or NDJSON")
+            }
         }
     }
 }
@@ -200,8 +225,7 @@ pub fn infer_schema(input: &str) -> Result<JsValue, JsValue> {
     security::PurityGuarantee::assert();
 
     security::validate_input(input).map_err(|e| {
-        serde_wasm_bindgen::to_value(&e)
-            .unwrap_or(JsValue::from_str("serialization_error"))
+        serde_wasm_bindgen::to_value(&e).unwrap_or(JsValue::from_str("serialization_error"))
     })?;
 
     let trimmed = input.trim_start();
@@ -211,12 +235,9 @@ pub fn infer_schema(input: &str) -> Result<JsValue, JsValue> {
         csv_parser::parse_csv(input)
     };
 
-    let output = result
-        .and_then(security::sanitize_output)
-        .map_err(|e| {
-            serde_wasm_bindgen::to_value(&e)
-                .unwrap_or(JsValue::from_str("serialization_error"))
-        })?;
+    let output = result.and_then(security::sanitize_output).map_err(|e| {
+        serde_wasm_bindgen::to_value(&e).unwrap_or(JsValue::from_str("serialization_error"))
+    })?;
 
     serde_wasm_bindgen::to_value(&output)
         .map_err(|e| JsValue::from_str(&format!("serialization_error: {e}")))
@@ -239,7 +260,10 @@ mod tests {
     fn byte_cap_enforced() {
         let oversized = "x".repeat(10 * 1024 * 1024 + 1);
         let result = infer_schema_inner(&oversized);
-        assert!(matches!(result.unwrap_err(), SchemaError::InputTooLarge { .. }));
+        assert!(matches!(
+            result.unwrap_err(),
+            SchemaError::InputTooLarge { .. }
+        ));
     }
 
     #[test]
@@ -258,10 +282,12 @@ mod tests {
     #[test]
     fn schema_output_serializes_cleanly() {
         let output = SchemaOutput {
-            row_count: 42, truncated: false,
+            row_count: 42,
+            truncated: false,
             detected_format: "csv".to_string(),
             schemasniff_version: "0.1.0".to_string(),
-            chunk_count: 1, columns: vec![],
+            chunk_count: 1,
+            columns: vec![],
         };
         let json = serde_json::to_string(&output).expect("serialize");
         let back: SchemaOutput = serde_json::from_str(&json).expect("deserialize");
@@ -270,7 +296,10 @@ mod tests {
 
     #[test]
     fn schema_error_serializes_with_tag() {
-        let err = SchemaError::TooManyColumns { limit: 1024, actual: 2000 };
+        let err = SchemaError::TooManyColumns {
+            limit: 1024,
+            actual: 2000,
+        };
         let json = serde_json::to_string(&err).expect("serialize");
         assert!(json.contains("\"error\":\"too_many_columns\""));
         assert!(json.contains("2000"));
@@ -278,8 +307,14 @@ mod tests {
 
     #[test]
     fn inferred_type_serializes_snake_case() {
-        assert_eq!(serde_json::to_string(&InferredType::Integer).unwrap(), "\"integer\"");
-        assert_eq!(serde_json::to_string(&InferredType::Unknown).unwrap(), "\"unknown\"");
+        assert_eq!(
+            serde_json::to_string(&InferredType::Integer).unwrap(),
+            "\"integer\""
+        );
+        assert_eq!(
+            serde_json::to_string(&InferredType::Unknown).unwrap(),
+            "\"unknown\""
+        );
     }
 }
 
@@ -314,15 +349,34 @@ mod schema_error_seal {
     #[test]
     fn display_contains_no_static_cell_content() {
         let errors = [
-            SchemaError::InputTooLarge { limit_bytes: 100, actual_bytes: 200 },
-            SchemaError::TooManyColumns { limit: 1024, actual: 2000 },
+            SchemaError::InputTooLarge {
+                limit_bytes: 100,
+                actual_bytes: 200,
+            },
+            SchemaError::TooManyColumns {
+                limit: 1024,
+                actual: 2000,
+            },
             SchemaError::RowLimitReached { limit: 1_000_000 },
-            SchemaError::NestingTooDeep { limit: 32, detected_at_row: 5 },
-            SchemaError::EncodingError { byte_offset: Some(42) },
+            SchemaError::NestingTooDeep {
+                limit: 32,
+                detected_at_row: 5,
+            },
+            SchemaError::EncodingError {
+                byte_offset: Some(42),
+            },
             SchemaError::EncodingError { byte_offset: None },
-            SchemaError::CsvParseFailed { row: 10, column: Some(3) },
-            SchemaError::CsvParseFailed { row: 10, column: None },
-            SchemaError::JsonParseFailed { byte_offset: Some(99) },
+            SchemaError::CsvParseFailed {
+                row: 10,
+                column: Some(3),
+            },
+            SchemaError::CsvParseFailed {
+                row: 10,
+                column: None,
+            },
+            SchemaError::JsonParseFailed {
+                byte_offset: Some(99),
+            },
             SchemaError::JsonParseFailed { byte_offset: None },
             SchemaError::EmptyInput,
             SchemaError::UnrecognizedFormat,
@@ -330,7 +384,10 @@ mod schema_error_seal {
         for err in &errors {
             let msg = err.to_string();
             assert!(msg.chars().all(|c| c.is_ascii()), "non-ASCII in: {msg:?}");
-            assert!(msg.chars().any(|c| c.is_ascii_alphabetic()), "no letters in: {msg:?}");
+            assert!(
+                msg.chars().any(|c| c.is_ascii_alphabetic()),
+                "no letters in: {msg:?}"
+            );
         }
     }
 }
@@ -346,7 +403,9 @@ mod integration_tests {
         } else {
             csv_parser::parse_csv(input)
         };
-        let out = result.and_then(security::sanitize_output).expect("expected Ok");
+        let out = result
+            .and_then(security::sanitize_output)
+            .expect("expected Ok");
         let json = serde_json::to_string(&out).expect("serialize");
         serde_json::from_str(&json).expect("deserialize")
     }
@@ -359,7 +418,9 @@ mod integration_tests {
             } else {
                 csv_parser::parse_csv(input)
             };
-            result.and_then(security::sanitize_output).expect_err("expected Err")
+            result
+                .and_then(security::sanitize_output)
+                .expect_err("expected Err")
         })
     }
 
@@ -384,7 +445,10 @@ mod integration_tests {
 
     #[test]
     fn malformed_json_returns_json_parse_failed() {
-        assert!(matches!(run_err("{bad json}"), SchemaError::JsonParseFailed { .. }));
+        assert!(matches!(
+            run_err("{bad json}"),
+            SchemaError::JsonParseFailed { .. }
+        ));
     }
 
     #[test]
