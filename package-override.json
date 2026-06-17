@@ -5,11 +5,11 @@
   "license": "MIT OR Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/shashik116/schemasniff"
+    "url": "git+https://github.com/Shashi116/schemasniff.git"
   },
-  "homepage": "https://github.com/shashik116/schemasniff#readme",
+  "homepage": "https://github.com/Shashi116/schemasniff#readme",
   "bugs": {
-    "url": "https://github.com/shashik116/schemasniff/issues"
+    "url": "https://github.com/Shashi116/schemasniff/issues"
   },
   "keywords": [
     "wasm", "schema", "csv", "json",

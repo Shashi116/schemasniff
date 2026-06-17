@@ -136,6 +136,11 @@ jobs:
             pkg/types.d.ts
           fail_on_unmatched_files: true
 
+      - name: Configure npm auth
+        run: echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > ~/.npmrc
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
       - name: Publish to npm
         run: cd pkg && npm publish --access public
         env:
