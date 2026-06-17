@@ -15,7 +15,7 @@ compiled to WASM, with a five-layer security model designed for untrusted
 user-uploaded files.
 
 - **Zero backend** — runs entirely client-side; sensitive data never leaves the browser
-- **Fast** — Rust + WASM; a 100k-row, 12.5 MB CSV processes in 1.5–3 seconds
+- **Fast** — Rust + WASM; a 100k-row, 11.9 MB CSV processes in ~2 s (3 chunks)
 - **Safe by construction** — `#![forbid(unsafe_code)]`, no `unwrap()` in production paths, fuzzed against malformed input
 - **Handles large files automatically** — internal chunking kicks in above 10 MB with no API change
 - **Tiny** — 208 KB WASM binary, ~91 KB gzipped npm package
@@ -189,12 +189,20 @@ If loading via CDN with a `<script>` tag, use the `integrity` attribute directly
 
 ## Benchmarks
 
-| Input | Rows | Size | Time (Chrome, M-series Mac) |
-|---|---|---|---|
-| Small CSV | 10 | < 1 KB | < 5 ms |
-| Sales records | 100,000 | 12.5 MB | ~1.5–3 s (4 chunks) |
+Measured in Chrome with `performance.now()` — see `demo/main.ts` for the harness.
 
-*Benchmarks recorded with `console.time` / `console.timeEnd` in the demo — see `demo/main.ts`.*
+| Rows | File size | Chunks | Time |
+|---|---|---|---|
+| 1,000 | ~54 KB | 1 | < 10 ms |
+| 10,000 | ~566 KB | 1 | < 50 ms |
+| 100,000 | 11.91 MB | 3 | ~2.1 s |
+| 500,000 | ~30 MB | 8 | ~10 s |
+
+WASM binary size: **208 KB** (well under the 500 KB target — no `wasm-opt` post-processing needed; size comes from `opt-level = "z"` + LTO alone).
+
+Single-pass files (under 10 MB) typically complete in single-digit to low-double-digit milliseconds. Files over 10 MB are automatically chunked at 4 MB per chunk with a `setTimeout(0)` yield between chunks to keep the UI responsive — total time scales roughly linearly with file size.
+
+*Benchmarks recorded with `performance.now()` in the demo — see `demo/main.ts`.*
 
 ## Browser support
 

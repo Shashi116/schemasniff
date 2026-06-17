@@ -138,15 +138,11 @@ async function processFile(file: File): Promise<void> {
   const t1 = performance.now();
 
   console.table({
-    file_size_mb:    (new TextEncoder().encode(text).length / 1024 / 1024).toFixed(2),
-    detected_format: isSchemaError(result) ? "error" : result.detected_format,
-    rows:            isSchemaError(result) ? "error" : result.row_count,
-    truncated:       isSchemaError(result) ? "error" : result.truncated,
-    chunks:          isSchemaError(result) ? "error" : result.chunk_count,
-    total_ms:        Math.round(t1 - t0),
-    ms_per_chunk:    isSchemaError(result)
-                         ? "error"
-                         : Math.round((t1 - t0) / result.chunk_count),
+    file:     file.name,
+    size_mb:  (file.size / 1024 / 1024).toFixed(2),
+    rows:     isSchemaError(result) ? "error" : result.row_count,
+    chunks:   isSchemaError(result) ? "error" : result.chunk_count,
+    total_ms: Math.round(t1 - t0),
   });
   hideLoading();
 
